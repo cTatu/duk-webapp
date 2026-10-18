@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Validare declarații + generare PDF</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --ink: #1c2733;
+      --muted: #5b6b7b;
+      --brand: #1668c4;
+      --brand-dark: #0f4f97;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #b42318;
+      --line: #dde4ea;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    .sub { color: var(--muted); margin: 0 0 28px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    form { display: grid; gap: 18px; }
+    label { display: grid; gap: 6px; font-weight: 600; font-size: 0.95rem; }
+    input[type="file"] { font-weight: 400; font-size: 0.9rem; }
+    select {
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 1rem;
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      padding: 12px 18px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--brand);
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      justify-self: start;
+    }
+    button:hover:not(:disabled) { background: var(--brand-dark); }
+    button:disabled { opacity: 0.6; cursor: progress; }
+    .hint { color: var(--muted); font-size: 0.85rem; font-weight: 400; }
+    #result { margin-top: 24px; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .badge.ok { background: #e6f4ea; color: var(--ok); }
+    .badge.warn { background: #fff4d6; color: var(--warn); }
+    .badge.err { background: #fde8e8; color: var(--err); }
+    #messages { list-style: none; margin: 0 0 16px; padding: 0; }
+    #messages li {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #fafcfe;
+    }
+    #download {
+      display: inline-block;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: var(--ok);
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+      margin-top: 4px;
+    }
+    #download[hidden] { display: none; }
+    footer { margin-top: 28px; color: var(--muted); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Validare declarație + generare PDF</h1>
+  <p class="sub">
+    Încărcați fișierul XML, alegeți tipul declarației, iar aplicația validează
+    și generează PDF-ul folosind componentele oficiale ANAF. Nu e nimic de instalat.
+  </p>
+
+  <div class="card">
+    <form id="form">
+      <label>
+        Fișierul XML al declarației
+        <input type="file" id="xml" name="xml" accept=".xml,text/xml,application/xml" required />
+      </label>
+      <label>
+        Tip declarație
+        <select id="declaration" name="declaration"></select>
+      </label>
+      <label>
+        Atașament ZIP <span class="hint">(opțional — doar dacă declarația are un fișier atașat)</span>
+        <input type="file" id="zip" name="zip" accept=".zip,application/zip" />
+      </label>
+      <button type="submit" id="submit">Validează și generează PDF</button>
+    </form>
+  </div>
+
+  <section id="result" hidden>
+    <div><span id="badge" class="badge"></span></div>
+    <ul id="messages"></ul>
+    <a id="download" href="#" hidden>Descarcă PDF-ul</a>
+  </section>
+
+  <footer>
+    Fișierele încărcate sunt procesate temporar și șterse imediat după răspuns.
+  </footer>
+</main>
+
+<script>
+(function () {
+  var form = document.getElementById("form");
+  var xmlInput = document.getElementById("xml");
+  var zipInput = document.getElementById("zip");
+  var declSelect = document.getElementById("declaration");
+  var submitBtn = document.getElementById("submit");
+  var resultBox = document.getElementById("result");
+  var badge = document.getElementById("badge");
+  var messagesEl = document.getElementById("messages");
+  var downloadLink = document.getElementById("download");
+  var pdfUrl = null;
+
+  fetch("/api/declarations")
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !Array.isArray(d.declarations) || !d.declarations.length) return;
+      declSelect.innerHTML = "";
+      d.declarations.forEach(function (name) {
+        var o = document.createElement("option");
+        o.value = name;
+        o.textContent = name;
+        declSelect.appendChild(o);
+      });
+    })
+    .catch(function () {
+      declSelect.innerHTML = '<option value="D112">D112</option>';
+    });
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (!xmlInput.files.length) { xmlInput.focus(); return; }
+    clearResult();
+    var originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Se procesează…";
+    var fd = new FormData();
+    fd.append("xml", xmlInput.files[0]);
+    fd.append("declaration", declSelect.value);
+    if (zipInput.files.length) fd.append("zip", zipInput.files[0]);
+
+    fetch("/api/process", { method: "POST", body: fd })
+      .then(function (res) {
+        return res.json().catch(function () { return null; }).then(function (data) {
+          return { res: res, data: data };
+        });
+      })
+      .then(function (out) {
+        var res = out.res, data = out.data;
+        if (!res.ok || !data || !data.ok) {
+          showError((data && data.error) || ("Eroare de server (" + res.status + ")."));
+          return;
+        }
+        showResult(data);
+      })
+      .catch(function () {
+        showError("Nu s-a putut contacta serverul. Încercați din nou.");
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel;
+      });
+  });
+
+  function clearResult() {
+    if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
+    downloadLink.hidden = true;
+    downloadLink.removeAttribute("href");
+    downloadLink.removeAttribute("download");
+    messagesEl.innerHTML = "";
+    badge.textContent = "";
+    badge.className = "badge";
+    resultBox.hidden = true;
+  }
+
+  function addMessage(text) {
+    var li = document.createElement("li");
+    li.textContent = text;
+    messagesEl.appendChild(li);
+  }
+
+  function showError(msg) {
+    badge.textContent = "Eroare";
+    badge.className = "badge err";
+    addMessage(msg);
+    resultBox.hidden = false;
+  }
+
+  function showResult(data) {
+    var lines = (data.messages || []).filter(function (m) {
+      return m && m.toLowerCase() !== "ok";
+    });
+    if (data.status === "ok") {
+      badge.textContent = "Validare OK — PDF generat";
+      badge.className = "badge ok";
+    } else if (data.status === "ok-with-warnings") {
+      badge.textContent = "Validare OK, cu atenționări — PDF generat";
+      badge.className = "badge warn";
+    } else {
+      badge.textContent = "Validare cu erori — PDF-ul nu a fost generat";
+      badge.className = "badge err";
+    }
+    lines.forEach(addMessage);
+
+    if (data.pdf) {
+      var pdfName = data.pdfName || "declaratie.pdf";
+      var binary = atob(data.pdf);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var blob = new Blob([bytes], { type: "application/pdf" });
+      pdfUrl = URL.createObjectURL(blob);
+      downloadLink.href = pdfUrl;
+      downloadLink.download = pdfName;
+      downloadLink.hidden = false;
+
+      var a = document.createElement("a");
+      a.href = pdfUrl;
+      a.download = pdfName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    resultBox.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

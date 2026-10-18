@@ -1,0 +1,17 @@
+{
+  "name": "duk-webapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web service that runs the official ANAF DUKIntegrator kit (validate declaration XML + generate PDF) behind a small web UI.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.1"
+  }
+}
