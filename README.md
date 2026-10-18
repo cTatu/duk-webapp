@@ -28,6 +28,17 @@ Create a **Web Service** from this repository:
 
 Drop the new `XnnnValidator.jar` (and `XnnnPdf.jar`) into `app/lib/`, restart — the declaration shows up in the UI automatically (detected from `*Validator.jar` names).
 
+## Updating from ANAF
+
+The bundle mirrors ANAF's official update channel (`update5/versiuni.xml`). To pull the current framework and declaration jars:
+
+```sh
+tools/refresh-kit.sh              # framework + D112 (default)
+tools/refresh-kit.sh D112 D300    # framework + specific declarations
+```
+
+Then commit — the next deploy ships the new versions.
+
 ## Layout
 
 ```
