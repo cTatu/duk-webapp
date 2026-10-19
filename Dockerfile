@@ -8,6 +8,7 @@ RUN npm install --omit=dev
 FROM eclipse-temurin:8-jre-jammy
 ENV NODE_ENV=production
 ENV LANG=C.UTF-8
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 
 # Node binary copied from the official Node image (needs glibc >= 2.28; jammy has 2.35)
 COPY --from=node-deps /usr/local/bin/node /usr/local/bin/node

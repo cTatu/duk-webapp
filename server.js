@@ -2,7 +2,7 @@
 
 const express = require("express");
 const multer = require("multer");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
@@ -19,6 +19,20 @@ const JAVA = process.env.JAVA_HOME
   : "java";
 
 const MAX_CONCURRENT = 2;
+
+async function findFile(dir, predicate) {
+  const entries = await fsp.readdir(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      const r = await findFile(full, predicate);
+      if (r) return r;
+    } else if (predicate(e.name)) {
+      return full;
+    }
+  }
+  return null;
+}
 const PROCESS_TIMEOUT_MS = 90_000;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -106,12 +120,43 @@ app.post(
     const workDir = await fsp.mkdtemp(path.join(os.tmpdir(), "duk-"));
 
     try {
-      const xmlPath = path.join(workDir, "declaratie.xml");
-      const zipPath = path.join(workDir, "atasament.zip");
       const resultPath = path.join(workDir, "rezultat.txt");
       const pdfPath = path.join(workDir, "declaratie.pdf");
 
-      await fsp.writeFile(xmlPath, xmlFile.buffer);
+      // The main upload may be either the XML itself or a ZIP archive that
+      // contains it (e.g. SAF-T exports). Extract when needed.
+      let xmlPath = path.join(workDir, "declaratie.xml");
+      const isZip =
+        (xmlFile.originalname || "").toLowerCase().endsWith(".zip") ||
+        (xmlFile.buffer.length >= 4 &&
+          xmlFile.buffer[0] === 0x50 &&
+          xmlFile.buffer[1] === 0x4b &&
+          xmlFile.buffer[2] === 0x03 &&
+          xmlFile.buffer[3] === 0x04);
+      if (isZip) {
+        const zipPath = path.join(workDir, "upload.zip");
+        await fsp.writeFile(zipPath, xmlFile.buffer);
+        const extractDir = path.join(workDir, "extracted");
+        await fsp.mkdir(extractDir, { recursive: true });
+        await new Promise((resolve, reject) => {
+          execFile(
+            "unzip",
+            ["-q", "-o", zipPath, "-d", extractDir],
+            (err) => (err ? reject(err) : resolve())
+          );
+        });
+        const foundXml = await findFile(extractDir, (n) =>
+          n.toLowerCase().endsWith(".xml")
+        );
+        if (!foundXml) {
+          throw new Error("Arhiva nu conține un fișier XML.");
+        }
+        xmlPath = foundXml;
+      } else {
+        await fsp.writeFile(xmlPath, xmlFile.buffer);
+      }
+
+      const zipPath = path.join(workDir, "atasament.zip");
       if (zipFile) await fsp.writeFile(zipPath, zipFile.buffer);
 
       // Mode B CLI: validate + create PDF, no signing.
