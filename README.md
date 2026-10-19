@@ -3,7 +3,7 @@
 Web service that wraps the official ANAF **DUKIntegrator** kit: upload a declaration XML, pick the declaration type, and get it validated with the generated PDF back — no Java, no installs for end users.
 
 - Runs the official ANAF components (untouched) inside Docker, so validation matches what ANAF itself checks.
-- Currently bundled declaration: **D112**.
+- Bundled declarations: **all declarations published on ANAF's update channel** (detected automatically from `*Validator.jar` files in `app/lib/`).
 - Uploaded files are processed in a temporary folder and deleted right after the response.
 - No smart-card signing — the flow ends at the generated PDF.
 

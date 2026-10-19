@@ -30,8 +30,7 @@ try {
     .readdirSync(LIB_DIR)
     .map((f) => (f.match(/^(.+?)Validator\.jar$/i) || [])[1])
     .filter(Boolean)
-    .map((s) => s.toUpperCase())
-    .sort();
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   if (found.length) DECLARATIONS = found;
 } catch (_) {
   /* keep default */
